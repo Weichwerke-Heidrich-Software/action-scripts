@@ -4,11 +4,20 @@ set -e
 
 cd "$(git rev-parse --show-toplevel)"
 
-major_version=$(node -p "require('./package.json').version.split('.')[0]")
+if [ -f "package.json" ]; then
+    major_version=$(node -p "require('./package.json').version.split('.')[0]")
+    minor_version=$(node -p "require('./package.json').version.split('.')[1]")
+    patch_version=$(node -p "require('./package.json').version.split('.')[2]")
+elif [ -f "version.txt" ]; then
+    major_version=$(head -n 1 version.txt | cut -d '.' -f 1)
+    minor_version=$(head -n 1 version.txt | cut -d '.' -f 2)
+    patch_version=$(head -n 1 version.txt | cut -d '.' -f 3)
+else
+    echo "Neither package.json nor version.txt found. Please ensure one of these files exists with the correct version format."
+    exit 1
+fi
 major_version_tag="v$major_version"
-minor_version=$(node -p "require('./package.json').version.split('.')[1]")
 minor_version_tag="v$major_version.$minor_version"
-patch_version=$(node -p "require('./package.json').version.split('.')[2]")
 patch_version_tag="v$major_version.$minor_version.$patch_version"
 
 repo_name=$(basename "$(git rev-parse --show-toplevel)")
@@ -22,11 +31,15 @@ for file in .github/workflows/*.yml README.md; do
     sed -i "s:$action_path@.*:$action_path@$major_version_tag:g" "$file"
 done
 
-echo "Updating package-lock.json."
-npm install
+if [ -f "package.json" ]; then
+    echo "Updating package-lock.json."
+    npm install
+fi
 
-echo "Compiling the project."
-ncc build src/index.ts -o dist --license licenses.txt
+if [ -f "src/index.ts" ]; then
+    echo "Compiling the project."
+    ncc build src/index.ts -o dist --license licenses.txt
+fi
 
 if ! git diff-index --quiet HEAD --ignore-space-at-eol --; then
   echo "You have uncommitted changes. Please commit or stash them before publishing."
@@ -39,7 +52,8 @@ if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
 fi
 
 if git tag -l | grep -q "$patch_version_tag"; then
-    echo "Version $patch_version_tag is already tagged. Please update the version in package.json."
+    echo "Version $patch_version_tag is already tagged."
+    echo "Please update the version in package.json or version.txt."
     exit 1
 else
     echo "Everything looks in order."
